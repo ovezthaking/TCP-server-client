@@ -8,6 +8,7 @@
 #include <sys/select.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <errno.h>
 
 #define MAX_CONNECTION 100
 #define NAME_SIZE 8
@@ -21,7 +22,7 @@ struct CALCDATA {
 
 struct conninfo {
     int status;
-    char name[NAME_SIZE+1];
+    char name[NAME_SIZE + 1];
     int Csock;
     int protocol_state;
     int Asock;
@@ -53,7 +54,7 @@ int create_data(int idx, struct CALCDATA *cdata) {
         uint32_t v;
         value = &cdata->data[0];
         for (i = 0; i < MAX_DATA; i++) {
-            v = (uint32_t) rand() ^ (uint32_t) rand();
+            v = (uint32_t)rand() ^ (uint32_t)rand();
             printf("Creating value #%d v=%u addr=%lu \r", i, v, (unsigned long)value);
             *value = v & 0x0000FFFF;
             value++;
@@ -63,13 +64,14 @@ int create_data(int idx, struct CALCDATA *cdata) {
     return 0;
 }
 
-void send_protocol(int idx, char cmd, const char* param) {
+void send_protocol(int idx, char cmd, const char *param) {
     char sdata[BUFFER_SIZE];
     snprintf(sdata, sizeof(sdata), "@000000000!%c:%s#", cmd, param);
     send(conn[idx].Csock, sdata, strlen(sdata), MSG_NOSIGNAL | MSG_DONTWAIT);
 }
 
-void handle_client_command(int idx, char* command) {
+void handle_client_command(int idx, char *command) {
+    printf("Received command from client: %s\n", command);
     if (command[0] == 'N') {
         conn[idx].dataport = DATA_PORT_BASE + idx + 1;
         int create_result = create_data(idx, &conn[idx].data);
@@ -88,7 +90,7 @@ void handle_client_command(int idx, char* command) {
     }
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <port>\n", argv[0]);
         exit(EXIT_FAILURE);
@@ -113,7 +115,7 @@ int main(int argc, char* argv[]) {
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
 
-    if (bind(lsock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(lsock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("Bind failed");
         close(lsock);
         exit(EXIT_FAILURE);
@@ -124,6 +126,8 @@ int main(int argc, char* argv[]) {
         close(lsock);
         exit(EXIT_FAILURE);
     }
+
+    printf("Server listening on port %d\n", port);
 
     // Initialize connections
     for (int i = 0; i < MAX_CONNECTION; i++) {
@@ -151,12 +155,12 @@ int main(int argc, char* argv[]) {
 
         activity = select(max_sd + 1, &read_fds, NULL, NULL, NULL);
 
-        if ((activity < 0)) {
+        if ((activity < 0) && (errno != EINTR)) {
             perror("Select error");
         }
 
         if (FD_ISSET(lsock, &read_fds)) {
-            if ((new_socket = accept(lsock, (struct sockaddr*)&client_addr, &client_len)) < 0) {
+            if ((new_socket = accept(lsock, (struct sockaddr *)&client_addr, &client_len)) < 0) {
                 perror("Accept error");
                 exit(EXIT_FAILURE);
             }
@@ -166,6 +170,7 @@ int main(int argc, char* argv[]) {
                 if (conn[idx].Csock == -1) {
                     conn[idx].Csock = new_socket;
                     conn[idx].status = 1;
+                    printf("New connection accepted, assigned index %d\n", idx);
                     break;
                 }
             }
@@ -179,6 +184,7 @@ int main(int argc, char* argv[]) {
             if (FD_ISSET(conn[i].Csock, &read_fds)) {
                 int valread = read(conn[i].Csock, buffer, BUFFER_SIZE);
                 if (valread == 0) {
+                    printf("Client disconnected, index %d\n", i);
                     close(conn[i].Csock);
                     conn[i].Csock = -1;
                     conn[i].status = 0;
