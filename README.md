@@ -7,3 +7,5 @@ USAGE:
 
 ./client <@name0N> <IP_address> <srv_port>  
 where "name" is an username
+
+TESTED ON LINUX (UBUNTU)
